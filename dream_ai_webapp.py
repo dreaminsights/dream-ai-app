@@ -1,18 +1,26 @@
 import streamlit as st
-import openai
+import requests
 from PIL import Image
 import requests
 from io import BytesIO
 import os
-from dotenv import load_dotenv
 import json
 from datetime import datetime
 import time
+from openai import OpenAI
 
-# .envファイルからAPIキーを読み込む
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
+# APIキーの読み込み - Streamlit Secretsとローカルの.envファイルの両方に対応
+try:
+    # Streamlit Cloudsの場合はst.secretsから読み込む
+    api_key = st.secrets["OPENAI_API_KEY"]
+except:
+    # ローカル開発環境の場合は.envから読み込む
+    from dotenv import load_dotenv
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+
+# OpenAIクライアントの初期化
+client = OpenAI(api_key=api_key)
 
 # セッション状態の初期化
 if 'history' not in st.session_state:
@@ -98,7 +106,8 @@ def generate_diverse_prompts(dream_text):
     
     prompt = f"以下の夢の内容から、3つの異なる写実的なプロンプトを作成してください：\n{dream_text}"
     
-    response = openai.ChatCompletion.create(
+    # 新しいAPIの呼び出し方法
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -106,7 +115,7 @@ def generate_diverse_prompts(dream_text):
         ]
     )
     
-    # レスポンスから3つのプロンプトを抽出
+    # レスポンスから3つのプロンプトを抽出（新しいAPIに対応）
     prompts = response.choices[0].message.content.strip().split('\n\n')
     return [p.split(': ')[-1] for p in prompts if p][:3]
 
@@ -125,13 +134,14 @@ if st.button("夢を解析して画像を生成"):
         st.session_state.image_urls = []
         for i, prompt in enumerate(diverse_prompts):
             progress_text.text(f"画像を生成中... ({i+1}/3)")
-            image_response = openai.Image.create(
+            # 新しいAPIの呼び出し方法
+            image_response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
                 n=1,
                 size="1024x1024"
             )
-            st.session_state.image_urls.append(image_response["data"][0]["url"])
+            st.session_state.image_urls.append(image_response.data[0].url)
             # 進捗バーの値を33%から100%の間で均等に配分
             progress_bar.progress(33 + ((i + 1) * 22))  # 33, 55, 77, 100
         
@@ -194,7 +204,8 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
         }}
         """
 
-        response = openai.ChatCompletion.create(
+        # 新しいAPIの呼び出し方法
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "あなたは夢占いの専門家です。JSONフォーマットで詳細な解釈を提供してください。"},
