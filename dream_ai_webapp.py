@@ -1,26 +1,18 @@
 import streamlit as st
-import requests
+import openai
 from PIL import Image
 import requests
 from io import BytesIO
 import os
+from dotenv import load_dotenv
 import json
 from datetime import datetime
 import time
-from openai import OpenAI
 
-# APIキーの読み込み - Streamlit Secretsとローカルの.envファイルの両方に対応
-try:
-    # Streamlit Cloudsの場合はst.secretsから読み込む
-    api_key = st.secrets["OPENAI_API_KEY"]
-except:
-    # ローカル開発環境の場合は.envから読み込む
-    from dotenv import load_dotenv
-    load_dotenv()
-    api_key = os.getenv("OPENAI_API_KEY")
-
-# OpenAIクライアントの初期化
-client = OpenAI(api_key=api_key)
+# .envファイルからAPIキーを読み込む
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
 # セッション状態の初期化
 if 'history' not in st.session_state:
@@ -41,7 +33,7 @@ if len(st.session_state.history) > 0:
             st.image(entry['image_url'], use_container_width=True)
             st.write(f"解釈: {entry['interpretation']}")
 
-st.title("🌙 AI夢占い - あなたの夢を画像で再現")
+st.title("🌙 AI夢占い - あなたの夢をビジュアル化")
 
 # ユーザーが夢を入力
 dream_text = st.text_area(
@@ -106,8 +98,7 @@ def generate_diverse_prompts(dream_text):
     
     prompt = f"以下の夢の内容から、3つの異なる写実的なプロンプトを作成してください：\n{dream_text}"
     
-    # 新しいAPIの呼び出し方法
-    response = client.chat.completions.create(
+    response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -115,7 +106,7 @@ def generate_diverse_prompts(dream_text):
         ]
     )
     
-    # レスポンスから3つのプロンプトを抽出（新しいAPIに対応）
+    # レスポンスから3つのプロンプトを抽出
     prompts = response.choices[0].message.content.strip().split('\n\n')
     return [p.split(': ')[-1] for p in prompts if p][:3]
 
@@ -134,14 +125,13 @@ if st.button("夢を解析して画像を生成"):
         st.session_state.image_urls = []
         for i, prompt in enumerate(diverse_prompts):
             progress_text.text(f"画像を生成中... ({i+1}/3)")
-            # 新しいAPIの呼び出し方法
-            image_response = client.images.generate(
+            image_response = openai.Image.create(
                 model="dall-e-3",
                 prompt=prompt,
                 n=1,
                 size="1024x1024"
             )
-            st.session_state.image_urls.append(image_response.data[0].url)
+            st.session_state.image_urls.append(image_response["data"][0]["url"])
             # 進捗バーの値を33%から100%の間で均等に配分
             progress_bar.progress(33 + ((i + 1) * 22))  # 33, 55, 77, 100
         
@@ -204,8 +194,7 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
         }}
         """
 
-        # 新しいAPIの呼び出し方法
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "あなたは夢占いの専門家です。JSONフォーマットで詳細な解釈を提供してください。"},
@@ -334,6 +323,14 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
 #夢占い #AI"""
             encoded_combined = requests.utils.quote(combined_summary)
             st.write(f"[Twitterで全てをシェア](https://twitter.com/intent/tweet?text={encoded_combined})")
+
+            # もう一度占うボタン
+            st.divider()
+            if st.button("🔄 もう一度占う", type="primary"):
+                # セッション状態をリセット
+                st.session_state.selected_image_index = None
+                st.session_state.image_urls = []
+                st.rerun()
 
         except json.JSONDecodeError:
             st.error("結果の解析中にエラーが発生しました。もう一度お試しください。")
