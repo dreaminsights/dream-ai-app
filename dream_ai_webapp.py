@@ -35,7 +35,7 @@ if len(st.session_state.history) > 0:
             st.image(entry['image_url'], use_container_width=True)
             st.write(f"解釈: {entry['interpretation']}")
 
-st.title("🌙 AI夢占い - あなたの夢をビジュアル化")
+st.title("🌙 AI夢占い - あなたの夢を画像で再現")
 
 # ユーザーが夢を入力
 dream_text = st.text_area(
