@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 from PIL import Image
 import requests
 from io import BytesIO
@@ -12,7 +12,9 @@ import time
 # .envファイルからAPIキーを読み込む
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
+
+# OpenAI クライアントを初期化
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # セッション状態の初期化
 if 'history' not in st.session_state:
@@ -98,7 +100,7 @@ def generate_diverse_prompts(dream_text):
     
     prompt = f"以下の夢の内容から、3つの異なる写実的なプロンプトを作成してください：\n{dream_text}"
     
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -110,7 +112,7 @@ def generate_diverse_prompts(dream_text):
     prompts = response.choices[0].message.content.strip().split('\n\n')
     return [p.split(': ')[-1] for p in prompts if p][:3]
 
-if st.button("夢を解析して画像を生成"):
+if st.button("夢を解析して画像を生成", type="primary", use_container_width=True):
     with st.spinner("夢を分析中..."):
         # 進捗バーの表示
         progress_bar = st.progress(0)
@@ -125,13 +127,13 @@ if st.button("夢を解析して画像を生成"):
         st.session_state.image_urls = []
         for i, prompt in enumerate(diverse_prompts):
             progress_text.text(f"画像を生成中... ({i+1}/3)")
-            image_response = openai.Image.create(
+            image_response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
                 n=1,
                 size="1024x1024"
             )
-            st.session_state.image_urls.append(image_response["data"][0]["url"])
+            st.session_state.image_urls.append(image_response.data[0].url)
             # 進捗バーの値を33%から100%の間で均等に配分
             progress_bar.progress(33 + ((i + 1) * 22))  # 33, 55, 77, 100
         
@@ -140,30 +142,31 @@ if st.button("夢を解析して画像を生成"):
         progress_text.empty()
         progress_bar.empty()
 
-# 画像を横並びで表示して選択させる
+# 画像を横並びで表示して選択させる（モバイル最適化）
 if st.session_state.image_urls:
-    st.subheader("🖼 生成された画像の中から、最も夢のイメージに合うものを選んでください")
+    st.subheader("🖼 最も夢のイメージに合う画像を選んでください")
     
-    # 3列のレイアウトを作成
-    cols = st.columns(3)
-    
-    # 各画像を表示
-    for idx, (col, image_url) in enumerate(zip(cols, st.session_state.image_urls)):
-        with col:
-            st.image(image_url, use_container_width=True)
-            
-            # 画像の保存ボタン
+    # モバイル向けに縦並びレイアウトに変更
+    for idx, image_url in enumerate(st.session_state.image_urls):
+        st.image(image_url, use_container_width=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
             if st.download_button(
-                f"画像を保存 #{idx + 1}",
+                f"💾 保存 #{idx + 1}",
                 data=requests.get(image_url).content,
                 file_name=f"dream_image_{idx+1}.png",
-                mime="image/png"
+                mime="image/png",
+                use_container_width=True
             ):
                 st.success(f"画像 #{idx + 1} を保存しました！")
-            
-            if st.button(f"この画像を選択 #{idx + 1}", key=f"select_image_{idx}"):
+        
+        with col2:
+            if st.button(f"✅ 選択 #{idx + 1}", key=f"select_image_{idx}", use_container_width=True):
                 st.session_state.selected_image_index = idx
                 st.rerun()
+        
+        st.divider()  # 画像間の区切り
 
 # 選択された画像がある場合、夢占い結果を表示
 if hasattr(st.session_state, 'selected_image_index') and st.session_state.selected_image_index is not None:
@@ -194,7 +197,7 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
         }}
         """
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "あなたは夢占いの専門家です。JSONフォーマットで詳細な解釈を提供してください。"},
@@ -212,8 +215,8 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
             
             st.subheader("🔮 夢の意味（占い結果）")
             
-            # タブで結果を分類
-            tab1, tab2, tab3, tab4 = st.tabs(["象徴と解釈", "感情分析", "重要なシンボル", "アドバイス"])
+            # タブで結果を分類（モバイル向けに短縮）
+            tab1, tab2, tab3, tab4 = st.tabs(["🔮 解釈", "💭 感情", "✨ シンボル", "💡 アドバイス"])
             
             with tab1:
                 # 象徴的な意味と心理学的解釈
@@ -326,7 +329,7 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
 
             # もう一度占うボタン
             st.divider()
-            if st.button("🔄 もう一度占う", type="primary"):
+            if st.button("🔄 もう一度占う", type="secondary", use_container_width=True):
                 # セッション状態をリセット
                 st.session_state.selected_image_index = None
                 st.session_state.image_urls = []
@@ -334,3 +337,24 @@ if hasattr(st.session_state, 'selected_image_index') and st.session_state.select
 
         except json.JSONDecodeError:
             st.error("結果の解析中にエラーが発生しました。もう一度お試しください。")
+
+# モバイル最適化のためのカスタムCSS
+st.markdown("""
+<style>
+    .stTextArea textarea {
+        font-size: 16px !important;
+    }
+    .stButton button {
+        height: 3rem;
+        font-size: 16px !important;
+    }
+    .stSelectbox select {
+        font-size: 16px !important;
+    }
+    @media (max-width: 768px) {
+        .stColumns {
+            gap: 0.5rem;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
